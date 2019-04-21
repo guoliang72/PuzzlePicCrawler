@@ -1,6 +1,12 @@
-images
+images*
 gray
 resize
 raw_images
 *.pyc
 *.html
+*.jpg
+opened
+closed
+kmeans
+*.out
+pid
