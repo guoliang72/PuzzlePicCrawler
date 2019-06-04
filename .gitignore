@@ -1,4 +1,4 @@
-images*
+images
 gray
 resize
 raw_images
@@ -10,3 +10,6 @@ closed
 kmeans
 *.out
 pid
+test*
+blurred
+imagenet

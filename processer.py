@@ -1,6 +1,10 @@
 import cv2 as cv
 import numpy as np
 import os
+import requests
+import redis
+
+cli = redis.Redis(db=2)
 
 def check_mean_std_dev(img):
 	h, w = img.shape[:2]
@@ -22,15 +26,37 @@ def check_mean_std_dev(img):
 		return False
 	return True
 
+def check_sub_img_similar(img):
+	h, w, _ = img.shape
+	
+	i1, i2 = img[:int(h/2), :, :], img[int(h/2):, :, :]
+	h1, _ = np.histogram(i1, bins=128)
+	h2, _ = np.histogram(i2, bins=128)
+	h1, h2 = np.float32(h1), np.float32(h2)
+	m = cv.compareHist(h1, h2, cv.HISTCMP_CORREL)
+	#print(m)
+	if m > 0.9:
+		return False
+
+	i1, i2 = img[:, :int(w/2), :], img[:, int(w/2):, :]
+	h1, _ = np.histogram(i1, bins=128)
+	h2, _ = np.histogram(i2, bins=128)
+	h1, h2 = np.float32(h1), np.float32(h2)
+	m = cv.compareHist(h1, h2, cv.HISTCMP_CORREL)
+	#print(m)
+	if m > 0.9:
+		return False
+	return True
+
 def edge(img, img_name):
 	#定义结构元素
 	kernel = cv.getStructuringElement(cv.MORPH_RECT,(11, 11))
 	#闭运算
 	closed = cv.morphologyEx(img, cv.MORPH_CLOSE, kernel)
-	cv.imwrite('closed/%s' % img_name, closed)
+	#cv.imwrite('closed/%s' % img_name, closed)
 	#开运算
 	opened = cv.morphologyEx(img, cv.MORPH_OPEN, kernel)
-	cv.imwrite('opened/%s' % img_name, opened)
+	#cv.imwrite('opened/%s' % img_name, opened)
 	#高斯模糊,降低噪声
 	blurred = cv.GaussianBlur(opened,(3,3),1)
 	#灰度图像
@@ -77,7 +103,7 @@ def get_square(img):
 	return -1, -1
 
 def generate_thumb(img):
-	return cv.resize(img, (0, 0), fx=0.1, fy=0.1, interpolation=cv.INTER_NEAREST)
+	return cv.resize(img, (0, 0), fx=0.25, fy=0.25, interpolation=cv.INTER_NEAREST)
 
 def resize(img):
 	h, w = img.shape[:2]
@@ -102,13 +128,13 @@ def process(img_path, img_name):
 	if h < 650 and w < 650:
 		return
 	resize_img = resize(img)
-	cv.imwrite('resize/%s' % img_name, resize_img)
+	#cv.imwrite('resize/%s' % img_name, resize_img)
 	gray, closed = edge(resize_img, img_name)
-	cv.imwrite('gray/%s' % img_name, gray)
+	#cv.imwrite('gray/%s' % img_name, gray)
 	si, sj = get_square(gray)
 	if si >= 0 and sj >= 0:
 		cropped_closed = closed[si:si+640, sj:sj+640]
-		if check_mean_std_dev(cropped_closed):
+		if check_mean_std_dev(cropped_closed) and check_sub_img_similar(cropped_closed):
 			cropped = resize_img[si:si+640, sj:sj+640]
 			print('writing %s from (%d, %d)' % (img_name, si, sj))
 			cv.imwrite('images/%s' % img_name, cropped)
@@ -128,11 +154,27 @@ def process_images(path):
 				process(file_path, filename)
 			except Exception as e:
 				print(e)
-			
+
+def run(pid):
+	search_url = cli.lpop('crawler:image:url_list')
+	if not search_url:
+		return False
+	url = str(url,encoding='utf-8')
+	pat = re.compile('q=(.*?)&')
+	word = pat.findall(url)[0]
+	word = ''.join(re.findall('\w', word))
+	idx = 50
+	while True:
+		image_url = cli.lpop('crawler:image:url_list:' + word)
+		if not image_url:
+			break
+		cli.srem('crawler:image:url_set:' + word, image_url)
+		download_images(image_url, word, idx)
+		idx += 1
+	cli.srem('crawler:search:url_set', url)
 
 if __name__ == '__main__':
-	path = "raw_images"
-	process_images(path)
+	run(0)
 	'''
 	for img_name in ['abstraction_15.jpg', 'apex_15.jpg']:
 		print(img_name)
