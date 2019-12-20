@@ -24,8 +24,7 @@ def worker(pid):
 	myclient = pymongo.MongoClient("mongodb://localhost:27017/")
 	db = myclient["crawler"]
 
-	urls = db.urls.find()
-	image_count = 0
+	urls = list(db.urls.find())
 	for url in urls:
 		word, img_urls = url['word'], url['image_urls']
 		if not cli.sadd('crawler:process:url_set', word):
@@ -33,10 +32,7 @@ def worker(pid):
 		print(pid, 'start process %d images of word %s' % (len(img_urls), word))
 		for i, img_url in enumerate(img_urls):
 			download_image(img_url, word, i)
-		image_count += len(img_urls)
-		if image_count > 1:
-			break
-		print(pid, 'end process word %s, total process %d images' % (word, image_count))
+		print(pid, 'end process word %s, total process %d images' % (word, len(img_urls)))
 
 if __name__ == '__main__':
 	pool = multiprocessing.Pool(4)
